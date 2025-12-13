@@ -19,7 +19,8 @@ st.markdown("""
 # --- 1. SMART COLUMN MAPPING ---
 def smart_read_excel(file):
     """
-    Scans an Excel file to find the header row and maps columns to standard names.
+    Scans an Excel file to find the header row by searching for keywords 
+    INSIDE the cells (handling 'Court Book No.' vs 'Court Book').
     """
     if not file: return None
     
@@ -29,10 +30,14 @@ def smart_read_excel(file):
     found = False
     
     for idx, row in df_preview.iterrows():
-        row_str = row.astype(str).str.upper().values
-        # Look for key columns to identify the header
-        if any(x in row_str for x in ['COURT BOOK', 'CASE NO', 'CASE #']) and \
-           any(x in row_str for x in ['CHARGE', 'OFFENCE', 'OFFENSE']):
+        # Convert the whole row to a single string to search inside it
+        row_text = " ".join(row.astype(str).str.upper())
+        
+        # Look for partial matches (e.g. 'COURT BOOK' inside 'COURT BOOK NO.')
+        has_id = any(x in row_text for x in ['COURT BOOK', 'CASE NO', 'CASE #'])
+        has_charge = any(x in row_text for x in ['CHARGE', 'OFFENCE', 'OFFENSE'])
+        
+        if has_id and has_charge:
             header_row = idx
             found = True
             break
@@ -60,13 +65,12 @@ def smart_read_excel(file):
     
     return df.rename(columns=col_map)
 
-# --- 2. CATEGORIZATION ENGINE (Matches your Sheet Structure) ---
+# --- 2. CATEGORIZATION ENGINE ---
 def classify_crime(charge, victim):
     charge = str(charge).upper()
     victim = str(victim).upper()
     
     # --- ROW MAPPING FOR SHEET 1 ---
-    # We return: (Category Name, Excel Row Number for Sheet 1)
     
     # 1. POLICE RULE
     if any(k in victim for k in ['POLICE', 'PC ', 'CPL ', 'WPC ', 'GOB']) and 'MINOR' not in victim:
@@ -117,7 +121,6 @@ def classify_crime(charge, victim):
 def fill_template(template_file, monthly_stats, month_col='D'):
     """
     Opens the template and writes counts into specific rows.
-    month_col: 'D' for New Cases (Sheet 1), 'J' for Disposed (Sheet 1)
     """
     wb = openpyxl.load_workbook(template_file)
     
@@ -126,14 +129,15 @@ def fill_template(template_file, monthly_stats, month_col='D'):
         ws = wb['Sheet1']
         
         # Iterate through our calculated stats and write to cells
-        # stats format: { Row_Number: Count }
         for row_num, count in monthly_stats.items():
-            # Write to the specific cell (e.g., D33 for Murder New Cases)
             try:
-                current_val = ws[f"{month_col}{row_num}"].value or 0
+                # Ensure we are writing to an integer
+                current_val = ws[f"{month_col}{row_num}"].value
+                if current_val is None or not isinstance(current_val, (int, float)):
+                    current_val = 0
                 ws[f"{month_col}{row_num}"] = current_val + count
             except:
-                pass # Skip if row number is invalid
+                pass 
     
     return wb
 
@@ -170,7 +174,6 @@ if st.button("Run Auto-Fill"):
     st.success(f"Found {len(df_filtered)} cases for {datetime(2025, report_month, 1).strftime('%B')}.")
     
     # 3. Calculate Stats (Map to Row Numbers)
-    # Dictionary to store {Row_Index: Count}
     row_counts = {}
     
     for _, row in df_filtered.iterrows():
@@ -182,7 +185,6 @@ if st.button("Run Auto-Fill"):
             row_counts[row_idx] = 1
             
     # 4. Fill Template
-    # Column D = New Cases, Column J = Disposed Cases (Based on Sheet 1 structure)
     target_col = 'D' if mode == "New Cases (Arraignments)" else 'J'
     
     try:
