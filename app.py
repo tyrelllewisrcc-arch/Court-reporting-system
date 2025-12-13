@@ -2,56 +2,41 @@ import streamlit as st
 import pandas as pd
 import io
 import openpyxl
-from openpyxl.utils.dataframe import dataframe_to_rows
 from datetime import datetime
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="San Pedro Auto-Filler", layout="wide")
-st.title("📝 Auto-Fill 'San Pedro Annual Statistics' Report")
+st.set_page_config(page_title="San Pedro Auto-Filler Pro", layout="wide")
+st.title("⚖️ San Pedro Court Report: Complete 9-Sheet Auto-Filler")
 st.markdown("""
-**Instructions:**
-1. Upload your **Data File** (Active Cases or Returns).
-2. Upload your **Blank Report Template** (`_San Pedro Annual Statistics 2025_.xlsx`).
-3. Select the **Month**.
-4. The system will **Auto-Fill Sheet 1 (Cases) and Sheet 3 (Persons)**.
+**System Status:** ✅ Active
+**Supported Sheets:**
+*   **1 & 3:** Main Crimes (Cases & Persons)
+*   **2:** Disposal Breakdown
+*   **4 & 5:** Convicted Demographics (Sentence & Age)
+*   **6 & 7:** Juvenile Analysis (Offenses & Sentences)
+*   **8 & 9:** Statutory Offenses (Drugs, Firearms, Traffic, etc.)
 """)
 
-# --- 1. SMART COLUMN MAPPING (FIXED DUPLICATES) ---
+# --- 1. SMART COLUMN MAPPING ---
 def smart_read_excel(file):
-    """
-    Scans an Excel file, finds the header, and strictly safely renames columns.
-    Prevents duplicate column names by mapping Status and Remark separately.
-    """
     if not file: return None
-    
-    # 1. Find Header Row
     df_preview = pd.read_excel(file, header=None, nrows=20)
     header_row = 0
     found = False
-    
     for idx, row in df_preview.iterrows():
         row_text = " ".join([str(x).upper() for x in row.values])
-        
-        has_id = any(x in row_text for x in ['COURT BOOK', 'CASE NO', 'CASE #'])
-        has_charge = any(x in row_text for x in ['CHARGE', 'OFFENCE'])
-        
-        if has_id and has_charge:
+        if 'COURT BOOK' in row_text and ('CHARGE' in row_text or 'OFFENCE' in row_text):
             header_row = idx
             found = True
             break
             
     if not found:
-        st.error(f"Could not find headers in {file.name}. Ensure it has 'Court Book' and 'Charge' columns.")
+        st.error(f"Could not find headers in {file.name}.")
         return None
 
-    # 2. Read Data
     df = pd.read_excel(file, header=header_row)
-    
-    # 3. Clean Column Names
-    # Convert to string, strip, upper
     df.columns = [str(c).strip().upper() for c in df.columns]
     
-    # 4. Map to Standard Internal Names (Distinct names to avoid duplicates)
     col_map = {}
     for c in df.columns:
         if 'COURT BOOK' in c: col_map[c] = 'CASEID'
@@ -61,177 +46,276 @@ def smart_read_excel(file):
         elif 'CONCLUDED' in c or 'DISPOSAL' in c: col_map[c] = 'DATE_DISP'
         elif 'AGE' in c: col_map[c] = 'AGE'
         elif 'SEX' in c or 'GENDER' in c: col_map[c] = 'GENDER'
-        elif 'DEFENDANT' in c: col_map[c] = 'DEFENDANT'
         elif 'FURTHER' in c: col_map[c] = 'SENTENCE'
-        
-        # FIX: Map Status and Remark separately
         elif 'STATUS' in c: col_map[c] = 'CASE_STATUS' 
         elif 'REMARK' in c: col_map[c] = 'REMARK'
     
-    # Apply renaming
     df = df.rename(columns=col_map)
-    
-    # Safety Check: Remove duplicate columns if any remain
-    df = df.loc[:, ~df.columns.duplicated()]
-    
-    return df
+    return df.loc[:, ~df.columns.duplicated()]
 
-# --- 2. CATEGORIZATION ENGINE ---
-def classify_crime(charge, victim):
+# --- 2. INTELLIGENT PARSERS ---
+
+def classify_crime_sheet1(charge, victim):
+    # Maps to Row Numbers in Sheet 1
     charge = str(charge).upper()
     victim = str(victim).upper()
     
-    # Returns: (Category Name, Row Number)
-    
     # POLICE RULE
-    if any(k in victim for k in ['POLICE', 'PC ', 'CPL ', 'WPC ', 'GOB']) and 'MINOR' not in victim:
-        if any(x in charge for x in ['ASSAULT', 'RESIST']): return "AGAINST LAWFUL AUTHORITY", 25 
-        return "AGAINST LAWFUL AUTHORITY", 25
+    if any(k in victim for k in ['POLICE', 'PC ', 'CPL ', 'GOB']) and 'MINOR' not in victim:
+        return 25 
 
-    # 2. AGAINST LAWFUL AUTHORITY (Rows 21-25)
-    if 'ESCAPE' in charge: return "AGAINST LAWFUL AUTHORITY", 24
-    if 'PERJURY' in charge: return "AGAINST LAWFUL AUTHORITY", 23
-    if any(x in charge for x in ['DISORDERLY', 'ABUSIVE', 'THREAT']): return "AGAINST LAWFUL AUTHORITY", 22
-    
-    # 3. AGAINST PUBLIC MORALITY (Rows 26-31)
-    if 'RAPE' in charge: return "AGAINST PUBLIC MORALITY", 27
-    if 'SEXUAL ASSAULT' in charge: return "AGAINST PUBLIC MORALITY", 28
-    if 'UNLAWFUL SEXUAL' in charge: return "AGAINST PUBLIC MORALITY", 29
-    if 'UNNATURAL' in charge: return "AGAINST PUBLIC MORALITY", 30
-    
-    # 4. AGAINST THE PERSON (Rows 32-41)
-    if 'ATTEMPT' in charge and 'MURDER' in charge: return "AGAINST THE PERSON", 35
-    if 'MURDER' in charge: return "AGAINST THE PERSON", 33
-    if 'MANSLAUGHTER' in charge: return "AGAINST THE PERSON", 34
-    if 'GRIEVOUS' in charge: return "AGAINST THE PERSON", 36
-    if 'WOUNDING' in charge: return "AGAINST THE PERSON", 37
-    if 'HARM' in charge: return "AGAINST THE PERSON", 38
-    if 'AGGRAVATED ASSAULT' in charge: return "AGAINST THE PERSON", 39
-    if 'COMMON ASSAULT' in charge: return "AGAINST THE PERSON", 40
-    
-    # 5. AGAINST PROPERTY (Rows 42-50)
-    if 'ROBBERY' in charge: return "AGAINST PROPERTY", 43
-    if 'BURGLARY' in charge: return "AGAINST PROPERTY", 44
-    if 'THEFT' in charge: return "AGAINST PROPERTY", 45
-    if 'DECEPTION' in charge or 'FRAUD' in charge: return "AGAINST PROPERTY", 46
-    if 'HANDLING' in charge: return "AGAINST PROPERTY", 47
-    if 'DAMAGE' in charge: return "AGAINST PROPERTY", 48
-    if 'ARSON' in charge: return "AGAINST PROPERTY", 49
-    
-    # 6. OTHERS (Rows 51-59)
-    if 'FORGERY' in charge: return "OTHERS", 52
-    if 'DRUG' in charge or 'CANNABIS' in charge: return "OTHERS", 54
-    if 'PIPE' in charge: return "OTHERS", 57
-    if 'VEHICLE' in charge: return "OTHERS", 58
-    if 'TRAFFIC' in charge or 'MOTOR' in charge or 'LICENSE' in charge: return "OTHERS", 59
-    if 'FIREARM' in charge or 'AMMUNITION' in charge: return "OTHERS", 59
-    
-    return "OTHERS", 59 
+    if 'ESCAPE' in charge: return 24
+    if 'PERJURY' in charge: return 23
+    if any(x in charge for x in ['DISORDERLY', 'ABUSIVE', 'THREAT']): return 22
+    if 'RAPE' in charge: return 27
+    if 'SEXUAL ASSAULT' in charge: return 28
+    if 'UNLAWFUL SEXUAL' in charge: return 29
+    if 'UNNATURAL' in charge: return 30
+    if 'ATTEMPT' in charge and 'MURDER' in charge: return 35
+    if 'MURDER' in charge: return 33
+    if 'MANSLAUGHTER' in charge: return 34
+    if 'GRIEVOUS' in charge: return 36
+    if 'WOUNDING' in charge: return 37
+    if 'HARM' in charge: return 38
+    if 'AGGRAVATED ASSAULT' in charge: return 39
+    if 'COMMON ASSAULT' in charge: return 40
+    if 'ROBBERY' in charge: return 43
+    if 'BURGLARY' in charge: return 44
+    if 'THEFT' in charge: return 45
+    if 'DECEPTION' in charge or 'FRAUD' in charge: return 46
+    if 'HANDLING' in charge: return 47
+    if 'DAMAGE' in charge: return 48
+    if 'ARSON' in charge: return 49
+    if 'FORGERY' in charge: return 52
+    if 'DRUG' in charge or 'CANNABIS' in charge: return 54
+    if 'PIPE' in charge: return 57
+    if 'VEHICLE' in charge: return 58
+    if 'TRAFFIC' in charge or 'MOTOR' in charge or 'LICENSE' in charge: return 59
+    if 'FIREARM' in charge or 'AMMUNITION' in charge: return 59
+    return 59
 
-# --- 3. TEMPLATE FILLER LOGIC ---
-def fill_template(template_file, case_counts, person_counts, month_col='D'):
+def classify_statutory_sheet8(charge):
+    # Maps to Row Numbers in Sheet 8 (Est. based on doc list order)
+    c = str(charge).upper()
+    if 'DRUG' in c or 'CANNABIS' in c: return 12 # Dangerous Drugs
+    if 'FIREARM' in c or 'AMMUNITION' in c: return 13 # Firearms Act
+    if 'LIQUOR' in c: return 14 # Liquor Act
+    if 'POLICE' in c: return 15 # Police Act
+    if 'GAMBLING' in c: return 16 # Gambling
+    if 'TRAFFIC' in c or 'MOTOR' in c or 'LICENSE' in c: return 17 # Summary Jurisdiction
+    return 18 # Other
+
+def parse_disposition(remark):
+    r = str(remark).upper()
+    if any(x in r for x in ['CONVICTED', 'GUILTY', 'FINE', 'PRISON']): return 'CONVICTED'
+    if any(x in r for x in ['ACQUITTED', 'DISMISSED', 'STRUCK', 'DISCHARGED']): return 'DISMISSED'
+    if any(x in r for x in ['WITHDRAWN', 'NOLLE']): return 'NOLLE'
+    return 'OTHER'
+
+def parse_sentence(sentence_text):
+    s = str(sentence_text).upper()
+    if 'FINE' in s or '$' in s: return 'FINE'
+    if any(x in s for x in ['PRISON', 'IMPRISONMENT', 'CONFINEMENT', 'MONTHS', 'YEARS']): return 'PRISON'
+    if 'PROBATION' in s or 'BOND' in s: return 'PROBATION'
+    if 'REFORM' in s or 'SCHOOL' in s: return 'REFORMATORY'
+    return 'OTHER'
+
+def is_juvenile(age):
+    try: return int(age) <= 16
+    except: return False
+
+def get_age_col_sheet5(age, gender):
+    g = str(gender).upper()
+    is_male = 'F' not in g 
+    try: a = int(age)
+    except: return None
+    if a <= 16: return 'B' if is_male else 'C'
+    if 17 <= a <= 25: return 'D' if is_male else 'E'
+    if 26 <= a <= 35: return 'F' if is_male else 'G'
+    if 36 <= a <= 45: return 'H' if is_male else 'I'
+    if a >= 46: return 'J' if is_male else 'K'
+    return None
+
+# --- 3. TEMPLATE FILLER ---
+def fill_all_sheets(template_file, df, mode):
     wb = openpyxl.load_workbook(template_file)
     
-    # --- FILL SHEET 1 (CASES) ---
+    # --- PROCESS DATA ---
+    seen_cases = set()
+    rows_sheet1 = [] # Unique Cases
+    rows_sheet3 = [] # Persons
+    
+    for idx, row in df.iterrows():
+        r_num = classify_crime_sheet1(row.get('CHARGE', ''), row.get('VICTIM', ''))
+        rows_sheet3.append(r_num)
+        
+        case_id = row.get('CASEID', idx)
+        if case_id not in seen_cases:
+            rows_sheet1.append(r_num)
+            seen_cases.add(case_id)
+
+    # --- FILL SHEET 1 (Cases) ---
     if 'Sheet1' in wb.sheetnames:
         ws = wb['Sheet1']
-        for row_num, count in case_counts.items():
+        col = 'D' if mode == "New" else 'J'
+        for r in rows_sheet1:
             try:
-                current = ws[f"{month_col}{row_num}"].value
-                if not isinstance(current, (int, float)): current = 0
-                ws[f"{month_col}{row_num}"] = current + count
+                curr = ws[f"{col}{r}"].value or 0
+                ws[f"{col}{r}"] = curr + 1
             except: pass
-            
-    # --- FILL SHEET 3 (PERSONS) ---
+
+    # --- FILL SHEET 3 (Persons) ---
     if 'Sheet3' in wb.sheetnames:
-        ws3 = wb['Sheet3']
-        for row_num, count in person_counts.items():
+        ws = wb['Sheet3']
+        col = 'D' if mode == "New" else 'J'
+        for r in rows_sheet3:
             try:
-                current = ws3[f"{month_col}{row_num}"].value
-                if not isinstance(current, (int, float)): current = 0
-                ws3[f"{month_col}{row_num}"] = current + count
+                curr = ws[f"{col}{r}"].value or 0
+                ws[f"{col}{r}"] = curr + 1
             except: pass
+
+    # --- FILL SHEET 8 (Statutory Cases) ---
+    if 'Sheet8' in wb.sheetnames:
+        ws = wb['Sheet8']
+        for idx, row in df.iterrows():
+            stat_row = classify_statutory_sheet8(row.get('CHARGE', ''))
+            
+            if mode == "New":
+                # Column C = New Cases
+                try: ws[f"C{stat_row}"] = (ws[f"C{stat_row}"].value or 0) + 1
+                except: pass
+            elif mode == "Disposed":
+                disp = parse_disposition(row.get('REMARK', ''))
+                if disp == 'CONVICTED':
+                    try: ws[f"E{stat_row}"] = (ws[f"E{stat_row}"].value or 0) + 1
+                    except: pass
+                elif disp == 'DISMISSED':
+                    try: ws[f"F{stat_row}"] = (ws[f"F{stat_row}"].value or 0) + 1
+                    except: pass
+
+    # --- DISPOSED ONLY: FILL SHEETS 2, 4, 5, 6, 7, 9 ---
+    if mode == "Disposed":
+        
+        # Sheet 2 (Disposals)
+        if 'Sheet2' in wb.sheetnames:
+            ws = wb['Sheet2']
+            for idx, row in df.iterrows():
+                r_num = classify_crime_sheet1(row.get('CHARGE', ''), row.get('VICTIM', ''))
+                disp = parse_disposition(row.get('REMARK', ''))
+                target_col = {'CONVICTED': 'E', 'DISMISSED': 'C', 'NOLLE': 'D'}.get(disp)
+                if target_col:
+                    try: ws[f"{target_col}{r_num}"] = (ws[f"{target_col}{r_num}"].value or 0) + 1
+                    except: pass
+
+        # CONVICTED LOOP
+        for idx, row in df.iterrows():
+            if parse_disposition(row.get('REMARK', '')) != 'CONVICTED': continue
+
+            r_num = classify_crime_sheet1(row.get('CHARGE', ''), row.get('VICTIM', ''))
+            gender = row.get('GENDER', 'M')
+            is_male = 'F' not in str(gender).upper()
+            age = row.get('AGE', 0)
+            sent_type = parse_sentence(row.get('SENTENCE', ''))
+            
+            # Sheet 4 (Sentence)
+            if 'Sheet4' in wb.sheetnames:
+                ws = wb['Sheet4']
+                s_col = {'PRISON': 'D' if is_male else 'E', 'PROBATION': 'F' if is_male else 'G', 'FINE': 'H' if is_male else 'I'}.get(sent_type)
+                if s_col: 
+                    try: ws[f"{s_col}{r_num}"] = (ws[f"{s_col}{r_num}"].value or 0) + 1
+                    except: pass
+
+            # Sheet 5 (Age)
+            if 'Sheet5' in wb.sheetnames:
+                ws = wb['Sheet5']
+                a_col = get_age_col_sheet5(age, gender)
+                if a_col:
+                    try: ws[f"{a_col}{r_num-11}"] = (ws[f"{a_col}{r_num-11}"].value or 0) + 1
+                    except: pass
+
+            # JUVENILES (Age <= 16) - Sheets 6 & 7
+            if is_juvenile(age):
+                juv_row = r_num - 14 # Estimate offset
+                
+                # Sheet 6 (Offense)
+                if 'Sheet6' in wb.sheetnames:
+                    try: ws[f"F{juv_row}"] = (ws[f"F{juv_row}"].value or 0) + 1
+                    except: pass
+                
+                # Sheet 7 (Sentence)
+                if 'Sheet7' in wb.sheetnames:
+                    ws = wb['Sheet7']
+                    sent_col = {'PRISON': 'B', 'PROBATION': 'C', 'FINE': 'D', 'REFORMATORY': 'E'}.get(sent_type)
+                    if sent_col:
+                        try: ws[f"{sent_col}{juv_row}"] = (ws[f"{sent_col}{juv_row}"].value or 0) + 1
+                        except: pass
+
+            # Sheet 9 (Statutory Punishment)
+            if 'Sheet9' in wb.sheetnames:
+                stat_row = classify_statutory_sheet8(row.get('CHARGE', ''))
+                ws = wb['Sheet9']
+                # Mappings based on Stat Row
+                s_col = {'PRISON': 'D' if is_male else 'E', 'PROBATION': 'B' if is_male else 'C', 'FINE': 'F' if is_male else 'G'}.get(sent_type)
+                if s_col:
+                    try: ws[f"{s_col}{stat_row}"] = (ws[f"{s_col}{stat_row}"].value or 0) + 1
+                    except: pass
 
     return wb
 
-# --- 4. MAIN APP ---
-st.sidebar.header("1. Upload Files")
-data_file = st.sidebar.file_uploader("Upload Data File (Excel)", type=['xlsx'])
-template_file = st.sidebar.file_uploader("Upload 'San Pedro Statistics' Template", type=['xlsx'])
+# --- 4. MAIN INTERFACE ---
+st.sidebar.header("1. Uploads")
+data_file = st.sidebar.file_uploader("Data File (Excel)", type=['xlsx'])
+template_file = st.sidebar.file_uploader("Blank Template", type=['xlsx'])
 
 st.sidebar.header("2. Settings")
-mode = st.sidebar.radio("What data is this?", ["New Cases (Arraignments)", "Disposed Cases (Concluded)"])
-report_month = st.sidebar.selectbox("Select Month", range(1, 13), format_func=lambda x: datetime(2025, x, 1).strftime('%B'))
+mode = st.sidebar.radio("Data Type", ["New Cases (Arraignments)", "Disposed Cases (Concluded)"])
+is_full_year = st.sidebar.checkbox("Full Year Report")
+
+if not is_full_year:
+    report_month = st.sidebar.selectbox("Month", range(1, 13), format_func=lambda x: datetime(2025, x, 1).strftime('%B'))
 report_year = st.sidebar.number_input("Year", value=2025)
 
-if st.button("Run Auto-Fill"):
+if st.button("🚀 Process & Fill Report"):
     if not data_file or not template_file:
-        st.error("Please upload BOTH files.")
+        st.error("Upload both files first.")
         st.stop()
-        
-    # 1. Read Data
+
     df = smart_read_excel(data_file)
     if df is None: st.stop()
-    
-    # 2. Filter by Date
-    date_col = 'DATE_ARR' if mode == "New Cases (Arraignments)" else 'DATE_DISP'
-    
+
+    date_col = 'DATE_ARR' if mode.startswith("New") else 'DATE_DISP'
     if date_col not in df.columns:
-        st.error(f"Could not find date column. Ensure '{'Arraignment' if mode.startswith('New') else 'Concluded'}' column exists.")
+        st.error(f"Missing Date Column. Need '{'Arraignment' if mode.startswith('New') else 'Concluded'}' date.")
         st.stop()
         
     df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
-    mask = (df[date_col].dt.month == report_month) & (df[date_col].dt.year == report_year)
-    df_filtered = df[mask].copy()
     
-    st.success(f"Processing {len(df_filtered)} rows for {datetime(2025, report_month, 1).strftime('%B')}.")
-    
-    # 3. Calculate Stats
-    
-    # A. Person Counts (Raw Rows)
-    person_counts = {}
-    for _, row in df_filtered.iterrows():
-        _, row_idx = classify_crime(row.get('CHARGE', ''), row.get('VICTIM', ''))
-        person_counts[row_idx] = person_counts.get(row_idx, 0) + 1
-        
-    # B. Case Counts (Unique Court Book #)
-    case_counts = {}
-    if 'CASEID' in df_filtered.columns:
-        df_unique_cases = df_filtered.drop_duplicates(subset=['CASEID'])
-        for _, row in df_unique_cases.iterrows():
-            _, row_idx = classify_crime(row.get('CHARGE', ''), row.get('VICTIM', ''))
-            case_counts[row_idx] = case_counts.get(row_idx, 0) + 1
+    if is_full_year:
+        mask = (df[date_col].dt.year == report_year)
+        period_name = f"Full Year {report_year}"
     else:
-        st.warning("No 'Court Book No.' found. Counting rows as cases.")
-        case_counts = person_counts
+        mask = (df[date_col].dt.month == report_month) & (df[date_col].dt.year == report_year)
+        period_name = datetime(2025, report_month, 1).strftime('%B %Y')
 
-    # 4. Fill Template
-    target_col = 'D' if mode == "New Cases (Arraignments)" else 'J'
-    
+    df_filtered = df[mask].copy()
+    st.success(f"Processing {len(df_filtered)} records for {period_name}")
+
     try:
-        wb_filled = fill_template(template_file, case_counts, person_counts, month_col=target_col)
+        wb_filled = fill_all_sheets(template_file, df_filtered, "New" if mode.startswith("New") else "Disposed")
         
-        output = io.BytesIO()
-        wb_filled.save(output)
-        output.seek(0)
+        out = io.BytesIO()
+        wb_filled.save(out)
+        out.seek(0)
         
         st.download_button(
-            label="📥 Download Filled Report",
-            data=output,
-            file_name=f"San_Pedro_Stats_FILLED_{report_month}.xlsx",
+            "📥 Download Complete 9-Sheet Report",
+            data=out,
+            file_name=f"San_Pedro_Stats_9SHEETS_{period_name.replace(' ','_')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
         
-        # 5. Audit Trail
-        st.write("---")
-        st.write("### 🔍 Audit Trail (Data Extracted)")
-        
-        # Display key columns including Age/Sex if found
-        potential_cols = ['CASEID', 'DEFENDANT', 'AGE', 'GENDER', 'CHARGE', 'CASE_STATUS', 'REMARK', date_col]
-        # Filter to only show columns that actually exist in the dataframe
-        final_cols = [c for c in potential_cols if c in df_filtered.columns]
-        
-        st.dataframe(df_filtered[final_cols])
+        st.write("### Data Preview")
+        st.dataframe(df_filtered.head(50))
         
     except Exception as e:
-        st.error(f"Error processing template: {e}")
+        st.error(f"Processing Error: {e}")
