@@ -1,205 +1,212 @@
 import streamlit as st
 import pandas as pd
 import io
+import openpyxl
+from openpyxl.utils.dataframe import dataframe_to_rows
 from datetime import datetime
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="Belize Court Stats System", layout="wide")
-st.title("🇧🇿 Flexible Court Statistical Reporting System")
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="San Pedro Auto-Filler", layout="wide")
+st.title("📝 Auto-Fill 'San Pedro Annual Statistics' Report")
+st.markdown("""
+**Instructions:**
+1. Upload your **Data File** (Active Cases or Returns).
+2. Upload your **Blank Report Template** (`_San Pedro Annual Statistics 2025_.xlsx`).
+3. Select the **Month**.
+4. The system will read your data and **fill in the numbers** into your template automatically.
+""")
 
-# --- 1. SMART HEADER DETECTION ---
-def load_data_flexibly(uploaded_file):
+# --- 1. SMART COLUMN MAPPING ---
+def smart_read_excel(file):
     """
-    Reads an Excel file and automatically finds the header row 
-    by looking for key columns like 'Court Book' or 'Charge'.
+    Scans an Excel file to find the header row and maps columns to standard names.
     """
-    if not uploaded_file:
-        return None
+    if not file: return None
     
-    # Read first 10 rows to scan for headers
-    df_preview = pd.read_excel(uploaded_file, header=None, nrows=10)
+    # 1. Find Header Row (Scan first 20 rows)
+    df_preview = pd.read_excel(file, header=None, nrows=20)
+    header_row = 0
+    found = False
     
-    header_row_index = None
     for idx, row in df_preview.iterrows():
         row_str = row.astype(str).str.upper().values
-        # Key words to identify the header row
-        if any("COURT BOOK" in x for x in row_str) and any("CHARGE" in x for x in row_str):
-            header_row_index = idx
+        # Look for key columns to identify the header
+        if any(x in row_str for x in ['COURT BOOK', 'CASE NO', 'CASE #']) and \
+           any(x in row_str for x in ['CHARGE', 'OFFENCE', 'OFFENSE']):
+            header_row = idx
+            found = True
             break
-    
-    if header_row_index is None:
-        st.error(f"Could not find headers in {uploaded_file.name}. Please ensure columns 'Court Book No.' and 'Charge' exist.")
+            
+    if not found:
+        st.error(f"Could not find headers in {file.name}. Ensure it has 'Court Book' and 'Charge' columns.")
         return None
+
+    # 2. Read Data
+    df = pd.read_excel(file, header=header_row)
+    df.columns = df.columns.str.strip().str.upper() # Standardize to UPPERCASE
     
-    # Reload with correct header
-    df = pd.read_excel(uploaded_file, header=header_row_index)
-    
-    # Normalize Columns (Strip spaces, handle slight naming variations)
-    df.columns = df.columns.str.strip()
-    
-    # Map varied column names to standard internal names
+    # 3. Rename Columns to Standard Names
     col_map = {}
     for c in df.columns:
-        cu = c.upper()
-        if "COURT BOOK" in cu: col_map[c] = "CaseID"
-        elif "ARRAINGMENT" in cu or "ARRAIGNMENT" in cu: col_map[c] = "ArraignmentDate"
-        elif "CONCLUDED" in cu: col_map[c] = "DisposalDate"
-        elif "COMPLAINANT" in cu or "VICTIM" in cu: col_map[c] = "Victim"
-        elif "CHARGE" in cu: col_map[c] = "Charge"
-        elif "REMARK" in cu and "FURTHER" not in cu: col_map[c] = "Remark"
-        elif "SEX" in cu or "GENDER" in cu: col_map[c] = "Gender"
-        elif "AGE" in cu: col_map[c] = "Age"
+        if 'COURT BOOK' in c: col_map[c] = 'CASEID'
+        elif 'CHARGE' in c or 'OFFENCE' in c: col_map[c] = 'CHARGE'
+        elif 'COMPLAINANT' in c or 'VICTIM' in c: col_map[c] = 'VICTIM'
+        elif 'STATUS' in c or 'REMARK' in c: col_map[c] = 'STATUS'
+        elif 'ARRAINGMENT' in c or 'ARRAIGNMENT' in c: col_map[c] = 'DATE_ARR'
+        elif 'CONCLUDED' in c or 'DISPOSAL' in c: col_map[c] = 'DATE_DISP'
+        elif 'AGE' in c: col_map[c] = 'AGE'
+        elif 'SEX' in c or 'GENDER' in c: col_map[c] = 'GENDER'
+        elif 'FURTHER' in c: col_map[c] = 'SENTENCE' # For sentence details
     
-    df = df.rename(columns=col_map)
-    return df
+    return df.rename(columns=col_map)
 
-# --- 2. CATEGORIZATION ENGINE (UNCHANGED) ---
-def get_category(charge, complainant):
+# --- 2. CATEGORIZATION ENGINE (Matches your Sheet Structure) ---
+def classify_crime(charge, victim):
     charge = str(charge).upper()
-    complainant = str(complainant).upper()
-
-    # POLICE RULE
-    police_keywords = ['POLICE', 'PC ', 'WPC ', 'CPL ', 'SGT ', 'GOB', 'DEPARTMENT']
-    if any(k in complainant for k in police_keywords) and "MINOR" not in complainant:
-        return "AGAINST LAWFUL AUTHORITY"
-
-    # MAPPING
-    if any(x in charge for x in ['ESCAPE', 'RESCUE', 'PUBLIC TERROR', 'DISORDERLY', 'ABUSIVE', 'PERJURY', 'RESIST', 'OBSTRUCT']):
-        return "AGAINST LAWFUL AUTHORITY"
-    if any(x in charge for x in ['RAPE', 'UNLAWFUL SEXUAL', 'SEXUAL ASSAULT', 'UNNATURAL']):
-        return "AGAINST PUBLIC MORALITY"
-    if any(x in charge for x in ['MURDER', 'MANSLAUGHTER', 'HARM', 'WOUNDING', 'ASSAULT', 'THREAT']):
-        return "AGAINST THE PERSON"
-    if any(x in charge for x in ['ROBBERY', 'BURGLARY', 'THEFT', 'DECEPTION', 'FRAUD', 'HANDLING', 'DAMAGE', 'ARSON']):
-        return "AGAINST PROPERTY"
-    if any(x in charge for x in ['DRUG', 'CANNABIS', 'COCAINE', 'PIPE', 'FIREARM', 'AMMUNITION', 'TRAFFIC', 'MOTOR', 'LICENSE']):
-        return "OTHERS"
+    victim = str(victim).upper()
     
-    return "OTHERS" # Default
+    # --- ROW MAPPING FOR SHEET 1 ---
+    # We return: (Category Name, Excel Row Number for Sheet 1)
+    
+    # 1. POLICE RULE
+    if any(k in victim for k in ['POLICE', 'PC ', 'CPL ', 'WPC ', 'GOB']) and 'MINOR' not in victim:
+        if any(x in charge for x in ['ASSAULT', 'RESIST']): return "AGAINST LAWFUL AUTHORITY", 25 # Others/Assault Police
+        return "AGAINST LAWFUL AUTHORITY", 25
 
-# --- 3. MAIN LOGIC ---
+    # 2. AGAINST LAWFUL AUTHORITY (Rows 21-25)
+    if 'ESCAPE' in charge: return "AGAINST LAWFUL AUTHORITY", 24
+    if 'PERJURY' in charge: return "AGAINST LAWFUL AUTHORITY", 23
+    if any(x in charge for x in ['DISORDERLY', 'ABUSIVE', 'THREATENING WORDS']): return "AGAINST LAWFUL AUTHORITY", 22
+    
+    # 3. AGAINST PUBLIC MORALITY (Rows 26-31)
+    if 'RAPE' in charge: return "AGAINST PUBLIC MORALITY", 27
+    if 'SEXUAL ASSAULT' in charge: return "AGAINST PUBLIC MORALITY", 28
+    if 'UNLAWFUL SEXUAL' in charge: return "AGAINST PUBLIC MORALITY", 29
+    if 'UNNATURAL' in charge: return "AGAINST PUBLIC MORALITY", 30
+    
+    # 4. AGAINST THE PERSON (Rows 32-41)
+    if 'ATTEMPT' in charge and 'MURDER' in charge: return "AGAINST THE PERSON", 35
+    if 'MURDER' in charge: return "AGAINST THE PERSON", 33
+    if 'MANSLAUGHTER' in charge: return "AGAINST THE PERSON", 34
+    if 'GRIEVOUS' in charge or 'DANGEROUS HARM' in charge: return "AGAINST THE PERSON", 36
+    if 'WOUNDING' in charge: return "AGAINST THE PERSON", 37
+    if 'HARM' in charge: return "AGAINST THE PERSON", 38
+    if 'AGGRAVATED ASSAULT' in charge: return "AGAINST THE PERSON", 39
+    if 'COMMON ASSAULT' in charge: return "AGAINST THE PERSON", 40
+    
+    # 5. AGAINST PROPERTY (Rows 42-50)
+    if 'ROBBERY' in charge: return "AGAINST PROPERTY", 43
+    if 'BURGLARY' in charge: return "AGAINST PROPERTY", 44
+    if 'THEFT' in charge: return "AGAINST PROPERTY", 45
+    if 'DECEPTION' in charge or 'FRAUD' in charge: return "AGAINST PROPERTY", 46
+    if 'HANDLING' in charge: return "AGAINST PROPERTY", 47
+    if 'DAMAGE' in charge: return "AGAINST PROPERTY", 48
+    if 'ARSON' in charge: return "AGAINST PROPERTY", 49
+    
+    # 6. OTHERS (Rows 51-59)
+    if 'FORGERY' in charge: return "OTHERS", 52
+    if 'DRUG' in charge or 'CANNABIS' in charge: return "OTHERS", 54
+    if 'PIPE' in charge: return "OTHERS", 57
+    if 'VEHICLE' in charge and 'TAKING' in charge: return "OTHERS", 58
+    if 'TRAFFIC' in charge or 'MOTOR' in charge or 'LICENSE' in charge: return "OTHERS", 59
+    if 'FIREARM' in charge or 'AMMUNITION' in charge: return "OTHERS", 59
+    
+    return "OTHERS", 59 # Default catch-all
 
-st.sidebar.header("Settings")
-report_month = st.sidebar.selectbox("Select Report Month", range(1, 13), format_func=lambda x: datetime(2025, x, 1).strftime('%B'))
+# --- 3. TEMPLATE FILLER LOGIC ---
+def fill_template(template_file, monthly_stats, month_col='D'):
+    """
+    Opens the template and writes counts into specific rows.
+    month_col: 'D' for New Cases (Sheet 1), 'J' for Disposed (Sheet 1)
+    """
+    wb = openpyxl.load_workbook(template_file)
+    
+    # --- FILL SHEET 1 (Main Stats) ---
+    if 'Sheet1' in wb.sheetnames:
+        ws = wb['Sheet1']
+        
+        # Iterate through our calculated stats and write to cells
+        # stats format: { Row_Number: Count }
+        for row_num, count in monthly_stats.items():
+            # Write to the specific cell (e.g., D33 for Murder New Cases)
+            try:
+                current_val = ws[f"{month_col}{row_num}"].value or 0
+                ws[f"{month_col}{row_num}"] = current_val + count
+            except:
+                pass # Skip if row number is invalid
+    
+    return wb
+
+# --- 4. MAIN APP ---
+st.sidebar.header("1. Upload Files")
+data_file = st.sidebar.file_uploader("Upload Data File (Excel)", type=['xlsx'])
+template_file = st.sidebar.file_uploader("Upload 'San Pedro Statistics' Template", type=['xlsx'])
+
+st.sidebar.header("2. Settings")
+mode = st.sidebar.radio("What data is this?", ["New Cases (Arraignments)", "Disposed Cases (Concluded)"])
+report_month = st.sidebar.selectbox("Select Month", range(1, 13), format_func=lambda x: datetime(2025, x, 1).strftime('%B'))
 report_year = st.sidebar.number_input("Year", value=2025)
 
-st.sidebar.header("Upload Files (Either or Both)")
-file1 = st.sidebar.file_uploader("Upload File A (Active or Returns)", type=['xlsx'], key="f1")
-file2 = st.sidebar.file_uploader("Upload File B (Optional)", type=['xlsx'], key="f2")
-
-if st.button("Process Data"):
-    if not file1 and not file2:
-        st.warning("Please upload at least one file.")
+if st.button("Run Auto-Fill"):
+    if not data_file or not template_file:
+        st.error("Please upload BOTH your Data File and the Template File.")
         st.stop()
-
-    # Consolidate uploads into one list
-    files_to_process = [f for f in [file1, file2] if f is not None]
+        
+    # 1. Read Data
+    df = smart_read_excel(data_file)
+    if df is None: st.stop()
     
-    all_new_cases = []
-    all_disposed_cases = []
-    all_audit_data = []
-
-    for f in files_to_process:
-        df = load_data_flexibly(f)
-        if df is None: continue
-
-        # --- A. COUNT NEW CASES (Arraignment Date matches Report Month) ---
-        if 'ArraignmentDate' in df.columns:
-            df['ArraignmentDate'] = pd.to_datetime(df['ArraignmentDate'], errors='coerce')
-            
-            mask_new = (df['ArraignmentDate'].dt.month == report_month) & \
-                       (df['ArraignmentDate'].dt.year == report_year)
-            
-            df_new = df[mask_new].copy()
-            
-            for _, row in df_new.iterrows():
-                cat = get_category(row.get('Charge', ''), row.get('Victim', ''))
-                all_new_cases.append({
-                    'Category': cat,
-                    'CaseID': row.get('CaseID'),
-                    'Charge': row.get('Charge'),
-                    'Date': row['ArraignmentDate']
-                })
-                # Add to detailed audit list
-                all_audit_data.append({
-                    'Source File': f.name,
-                    'Type': 'New Case (Arraigned)',
-                    'CaseID': row.get('CaseID'),
-                    'Category': cat,
-                    'Charge': row.get('Charge'),
-                    'Date': row['ArraignmentDate'].strftime('%Y-%m-%d'),
-                    'Status': row.get('Status', '')
-                })
-
-        # --- B. COUNT DISPOSED CASES (Disposal Date matches Report Month) ---
-        if 'DisposalDate' in df.columns:
-            df['DisposalDate'] = pd.to_datetime(df['DisposalDate'], errors='coerce')
-            
-            mask_disposed = (df['DisposalDate'].dt.month == report_month) & \
-                            (df['DisposalDate'].dt.year == report_year)
-            
-            df_disp = df[mask_disposed].copy()
-            
-            for _, row in df_disp.iterrows():
-                cat = get_category(row.get('Charge', ''), row.get('Victim', ''))
-                all_disposed_cases.append({
-                    'Category': cat,
-                    'CaseID': row.get('CaseID'),
-                    'Charge': row.get('Charge'),
-                    'Date': row['DisposalDate']
-                })
-                # Add to detailed audit list
-                all_audit_data.append({
-                    'Source File': f.name,
-                    'Type': 'Disposed Case',
-                    'CaseID': row.get('CaseID'),
-                    'Category': cat,
-                    'Charge': row.get('Charge'),
-                    'Date': row['DisposalDate'].strftime('%Y-%m-%d'),
-                    'Status': row.get('Remark', 'Concluded')
-                })
-
-    # --- C. AGGREGATE STATS ---
-    df_new_stats = pd.DataFrame(all_new_cases)
-    df_disp_stats = pd.DataFrame(all_disposed_cases)
-    df_audit = pd.DataFrame(all_audit_data)
-
-    # Count by Category
-    stats_new = df_new_stats['Category'].value_counts() if not df_new_stats.empty else pd.Series(dtype=int)
-    stats_disp = df_disp_stats['Category'].value_counts() if not df_disp_stats.empty else pd.Series(dtype=int)
-
-    # Combine into one table
-    final_stats = pd.DataFrame({
-        'New Cases (Arraigned)': stats_new,
-        'Disposed Cases (Concluded)': stats_disp
-    }).fillna(0).astype(int)
-
-    # Sort to look standard
-    sort_order = ["AGAINST LAWFUL AUTHORITY", "AGAINST PUBLIC MORALITY", "AGAINST THE PERSON", "AGAINST PROPERTY", "OTHERS"]
-    final_stats = final_stats.reindex(sort_order).fillna(0).astype(int)
+    # 2. Filter by Date
+    date_col = 'DATE_ARR' if mode == "New Cases (Arraignments)" else 'DATE_DISP'
     
-    # Calculate Total
-    total_row = pd.DataFrame(final_stats.sum()).T
-    total_row.index = ['TOTAL']
-    final_stats = pd.concat([final_stats, total_row])
-
-    # --- D. DISPLAY ---
-    st.subheader(f"Statistics for {datetime(2025, report_month, 1).strftime('%B %Y')}")
-    st.dataframe(final_stats)
-
-    st.subheader("Individual Cases List (Audit Trail)")
-    st.write("These are the specific rows detected for this month:")
-    st.dataframe(df_audit)
-
-    # Excel Download
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        final_stats.to_excel(writer, sheet_name='Summary_Statistics')
-        df_audit.to_excel(writer, sheet_name='Individual_Cases_List', index=False)
+    if date_col not in df.columns:
+        st.error(f"Could not find a date column for {mode}. Looked for headers like 'Arraignment' or 'Concluded'. Found: {list(df.columns)}")
+        st.stop()
+        
+    df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+    mask = (df[date_col].dt.month == report_month) & (df[date_col].dt.year == report_year)
+    df_filtered = df[mask].copy()
     
-    st.download_button(
-        label="📥 Download Report (.xlsx)",
-        data=output.getvalue(),
-        file_name=f"Court_Report_{report_month}_{report_year}.xlsx",
-        mime="application/vnd.ms-excel"
-    )
+    st.success(f"Found {len(df_filtered)} cases for {datetime(2025, report_month, 1).strftime('%B')}.")
+    
+    # 3. Calculate Stats (Map to Row Numbers)
+    # Dictionary to store {Row_Index: Count}
+    row_counts = {}
+    
+    for _, row in df_filtered.iterrows():
+        cat_name, row_idx = classify_crime(row.get('CHARGE', ''), row.get('VICTIM', ''))
+        
+        if row_idx in row_counts:
+            row_counts[row_idx] += 1
+        else:
+            row_counts[row_idx] = 1
+            
+    # 4. Fill Template
+    # Column D = New Cases, Column J = Disposed Cases (Based on Sheet 1 structure)
+    target_col = 'D' if mode == "New Cases (Arraignments)" else 'J'
+    
+    try:
+        wb_filled = fill_template(template_file, row_counts, month_col=target_col)
+        
+        # 5. Save & Download
+        output = io.BytesIO()
+        wb_filled.save(output)
+        output.seek(0)
+        
+        st.write("### ✅ Template Filled Successfully!")
+        st.write("The system mapped your cases to the specific rows in Sheet 1.")
+        
+        st.download_button(
+            label="📥 Download Filled Report",
+            data=output,
+            file_name=f"San_Pedro_Stats_FILLED_{report_month}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        
+        # Audit Preview
+        st.write("---")
+        st.write("### Audit Trail (What was counted)")
+        st.dataframe(df_filtered[['CASEID', 'CHARGE', 'VICTIM', 'STATUS']])
+        
+    except Exception as e:
+        st.error(f"Error writing to template: {e}")
