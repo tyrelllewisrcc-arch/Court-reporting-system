@@ -436,10 +436,10 @@ with tab_ads:
     st.title("📢 Advertising Agent")
     st.markdown(
         """
-AI-powered marketing assistant for court reporting businesses — powered by **Claude Opus 4.7**.
+AI-powered marketing assistant for **any business** — powered by **Claude Opus 4.7**.
 
 Generate professional advertising content, campaign strategies, social media posts,
-email campaigns, Google ad copy, and more — all tailored for the legal industry.
+email campaigns, Google ad copy, and more — tailored to your industry and goals.
 """
     )
 
@@ -481,30 +481,30 @@ email campaigns, Google ad copy, and more — all tailored for the legal industr
         with st.expander("🏢 Business Profile (optional — improves results)", expanded=False):
             col1, col2 = st.columns(2)
             with col1:
-                biz_name = st.text_input("Business Name", placeholder="San Pedro Court Reporting")
-                biz_location = st.text_input("Location / Market", placeholder="San Pedro, Belize")
-                biz_years = st.text_input("Years in Business", placeholder="15+")
+                biz_name = st.text_input("Business Name", placeholder="e.g. Bloom Bakery")
+                biz_industry = st.text_input("Industry / Business Type", placeholder="e.g. Bakery, SaaS, Fitness Studio")
+                biz_location = st.text_input("Location / Market", placeholder="e.g. Austin, TX or Online")
             with col2:
                 biz_services = st.text_input(
-                    "Core Services",
-                    placeholder="Depositions, real-time reporting, transcription",
+                    "Products / Services",
+                    placeholder="e.g. Custom cakes, pastries, catering",
                 )
                 biz_target = st.text_input(
-                    "Primary Clients",
-                    placeholder="Litigation attorneys, personal injury firms",
+                    "Target Customers",
+                    placeholder="e.g. Local families, event planners, corporate clients",
                 )
                 biz_differentiator = st.text_input(
-                    "Key Differentiator",
-                    placeholder="Fastest turnaround in the region",
+                    "Unique Selling Point",
+                    placeholder="e.g. 100% organic ingredients, same-day delivery",
                 )
 
             business_context = {
                 "Business Name": biz_name,
-                "Location": biz_location,
-                "Years in Business": biz_years,
-                "Core Services": biz_services,
-                "Primary Target Clients": biz_target,
-                "Key Differentiator": biz_differentiator,
+                "Industry / Business Type": biz_industry,
+                "Location / Market": biz_location,
+                "Products / Services": biz_services,
+                "Target Customers": biz_target,
+                "Unique Selling Point": biz_differentiator,
             }
 
         # ── Quick-action buttons ─────────────────────────────────────────────
@@ -512,14 +512,14 @@ email campaigns, Google ad copy, and more — all tailored for the legal industr
         st.markdown("Click a button to pre-fill the request field, or write your own below.")
 
         quick_actions = [
-            ("📌 LinkedIn Post", "Write a compelling LinkedIn post that showcases our court reporting expertise and attracts law firm clients. Include a hook, key value proposition, and call-to-action."),
-            ("📧 Law Firm Email", "Draft a professional cold-outreach email to send to litigation law firms. It should introduce our services, highlight our accuracy and turnaround speed, and invite them to schedule a consultation."),
-            ("📅 4-Week Campaign", "Create a complete 4-week marketing campaign plan to grow our client base. Include strategy, content calendar, channel recommendations, and KPIs. Budget is around $1,000/month."),
-            ("🔍 Google Ads Copy", "Write Google Search Ad copy to attract attorneys searching for local court reporting services. Provide 5 headlines (max 30 chars each) and 3 descriptions (max 90 chars each)."),
-            ("📝 Blog Article", "Write a full blog article titled 'How Accurate Court Reporting Can Make or Break Your Case' — approximately 600 words, SEO-friendly, targeted at attorneys."),
-            ("🌐 Website Homepage", "Write compelling website homepage copy for our court reporting business, including hero headline, subheadline, key services section, and a trust-building section with call-to-action."),
-            ("📣 Facebook Post", "Create an engaging Facebook post that builds community trust and showcases our court reporting business. Keep it professional but approachable, with a light touch of personality."),
-            ("🎯 A/B Test Plan", "I have a LinkedIn post I want to test. Help me create 3 variations with different headlines and explain how to run an A/B test to find the best performer."),
+            ("📸 Instagram Post", "Write an engaging Instagram post for my business. Include a strong hook, compelling body copy, relevant hashtags, and a clear call-to-action."),
+            ("📧 Promotional Email", "Draft a promotional email campaign to send to my existing customer list. Include a subject line, preview text, body copy with a special offer, and a call-to-action button."),
+            ("📅 Launch Campaign", "Create a complete 4-week product/service launch campaign plan. Include strategy, weekly content calendar, channel recommendations, budget breakdown, and success KPIs."),
+            ("🔍 Google Ads Copy", "Write Google Search Ad copy for my business. Provide 5 headlines (max 30 chars each) and 3 descriptions (max 90 chars each) that drive clicks and conversions."),
+            ("🌐 Website Homepage", "Write compelling website homepage copy for my business, including a hero headline, subheadline, key benefits section, social proof section, and a strong call-to-action."),
+            ("🛍️ Product Description", "Write persuasive product/service descriptions for my business that highlight key benefits, address customer pain points, and motivate purchases."),
+            ("🎯 A/B Test Plan", "Help me design an A/B test for my marketing content. Create 3 variations with different angles and explain how to run the test, measure results, and pick a winner."),
+            ("👥 Audience Analysis", "Analyze my target audience and create detailed buyer personas for my business. Include demographics, psychographics, pain points, buying triggers, and the best channels to reach them."),
         ]
 
         # Display in a grid
@@ -539,10 +539,10 @@ email campaigns, Google ad copy, and more — all tailored for the legal industr
             height=120,
             placeholder=(
                 "Examples:\n"
-                "• Write a LinkedIn post about our real-time deposition reporting service\n"
-                "• Plan a 6-week campaign to attract personal injury law firms\n"
-                "• Create Google ad copy for local deposition services\n"
-                "• Draft a follow-up email to send after meeting an attorney at a bar event"
+                "• Write an Instagram caption for my new product launch\n"
+                "• Plan a 6-week campaign to grow my email list by 500 subscribers\n"
+                "• Create Google ad copy for my local coffee shop\n"
+                "• Draft a re-engagement email for customers who haven't bought in 90 days"
             ),
             key="ads_request_input",
         )
@@ -654,18 +654,18 @@ email campaigns, Google ad copy, and more — all tailored for the legal industr
             st.markdown(
                 """
 **For best results:**
-- Fill in the Business Profile above — the agent uses this to tailor content specifically to your firm
-- Be specific in your requests (platform, audience, goal)
-- Use Quick Actions as a starting point and edit the pre-filled request before generating
+- Fill in the Business Profile above — the agent uses this to tailor content to your specific business
+- Be specific in your requests (platform, audience, goal, tone)
+- Use Quick Actions as a starting point and customize the pre-filled request before generating
 
 **What the agent can do:**
-- ✅ LinkedIn, Facebook, Twitter/X posts
-- ✅ Email campaigns & cold outreach
-- ✅ Google Search ad copy
-- ✅ Blog articles & website copy
-- ✅ Full campaign strategies
-- ✅ A/B testing plans
-- ✅ Audience analysis & personas
-- ✅ Content calendars
+- ✅ Instagram, TikTok, LinkedIn, Facebook posts
+- ✅ Email campaigns & promotional sequences
+- ✅ Google & Meta ad copy
+- ✅ Website & landing page copy
+- ✅ Full launch & growth campaign strategies
+- ✅ A/B testing plans & frameworks
+- ✅ Audience analysis & buyer personas
+- ✅ Content calendars & brand voice guides
 """
             )

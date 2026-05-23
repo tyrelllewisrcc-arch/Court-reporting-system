@@ -1,211 +1,200 @@
 """
-Advertising Agent for Court Reporting Businesses
+Advertising Agent — General-Purpose Business Marketing Assistant
 Powered by Claude Opus 4.7 with adaptive thinking and agentic tool use.
 
-This module provides an AI-powered advertising agent that helps court reporting
-businesses create professional marketing content, campaign strategies, and
-advertising materials targeted at law firms and legal professionals.
+Works for any business type: retail, services, tech, hospitality, healthcare, etc.
 """
 
 import anthropic
 import json
 from typing import Generator, Optional, Dict, Any
 
-# ---------------------------------------------------------------------------
-# Model configuration
-# ---------------------------------------------------------------------------
 ADVERTISING_MODEL = "claude-opus-4-7"
 
 # ---------------------------------------------------------------------------
-# Tool definitions
+# Tool definitions  (fully generic — no industry assumptions)
 # ---------------------------------------------------------------------------
 ADVERTISING_TOOLS = [
     {
         "name": "analyze_audience",
         "description": (
-            "Analyze and define the target audience for court reporting services. "
-            "Returns detailed audience personas, pain points, recommended messaging, "
-            "and the best marketing channels to reach each segment."
+            "Analyze and define the ideal target audience for a business. "
+            "Returns detailed buyer personas, pain points, motivations, "
+            "and the best channels to reach each segment."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "service_type": {
+                "business_type": {
                     "type": "string",
-                    "description": (
-                        "The specific court reporting service to analyze "
-                        "(e.g., 'deposition services', 'real-time reporting', "
-                        "'legal transcription', 'remote depositions', 'legal videography')"
-                    ),
+                    "description": "What the business does (e.g., 'online clothing store', 'IT consulting firm', 'restaurant', 'SaaS startup')",
                 },
-                "geographic_focus": {
+                "product_or_service": {
                     "type": "string",
-                    "description": (
-                        "Geographic area or market (e.g., 'San Pedro, Belize', "
-                        "'local market', 'regional', 'national')"
-                    ),
+                    "description": "The specific product or service being advertised",
                 },
-                "target_firm_size": {
+                "current_audience": {
                     "type": "string",
-                    "enum": ["solo", "small", "medium", "large", "corporate", "all"],
-                    "description": "Size of law firms to target",
+                    "description": "Who is currently buying (if known), or leave blank to discover from scratch",
+                },
+                "goal": {
+                    "type": "string",
+                    "description": "What the business wants from this audience (e.g., 'first purchase', 'repeat orders', 'enterprise contracts')",
                 },
             },
-            "required": ["service_type"],
+            "required": ["business_type", "product_or_service"],
         },
     },
     {
-        "name": "create_campaign_strategy",
+        "name": "build_campaign_strategy",
         "description": (
-            "Create a comprehensive marketing campaign strategy with phased timeline, "
-            "content calendar, channel recommendations, budget allocation guidance, "
-            "quick-win actions, and measurable KPIs."
+            "Build a full go-to-market advertising campaign strategy — "
+            "with phases, channel mix, content cadence, budget guidance, "
+            "quick wins, and measurable KPIs."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "goal": {
+                "business_type": {
+                    "type": "string",
+                    "description": "What the business does",
+                },
+                "campaign_objective": {
                     "type": "string",
                     "description": (
-                        "Primary campaign goal (e.g., 'attract new law firm clients', "
-                        "'promote real-time reporting service', 'increase brand awareness', "
-                        "'generate referrals from existing clients')"
+                        "Primary goal (e.g., 'launch new product', 'grow social following', "
+                        "'drive website sales', 'generate B2B leads', 'increase foot traffic')"
                     ),
                 },
                 "duration_weeks": {
                     "type": "integer",
-                    "description": "Campaign duration in weeks (1–52)",
+                    "description": "How many weeks the campaign should run (1–52)",
                     "minimum": 1,
                     "maximum": 52,
                 },
-                "budget": {
+                "monthly_budget": {
                     "type": "string",
-                    "description": (
-                        "Available budget (e.g., 'minimal / under $500', "
-                        "'$500–$2 000/month', '$2 000–$5 000/month', 'flexible')"
-                    ),
+                    "description": "Approximate monthly budget (e.g., 'under $500', '$1 000–$3 000', '$5 000+', 'unknown')",
                 },
                 "channels": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Preferred marketing channels to include in the plan",
+                    "description": "Channels to include (e.g., ['Instagram', 'Email', 'Google Ads', 'TikTok'])",
                 },
             },
-            "required": ["goal", "duration_weeks"],
+            "required": ["business_type", "campaign_objective", "duration_weeks"],
         },
     },
     {
-        "name": "generate_content_brief",
+        "name": "create_content_brief",
         "description": (
-            "Generate a structured content brief for specific advertising materials. "
-            "The brief includes platform specifications, required elements, content angles, "
-            "suggested keywords, and what to avoid — so the final copy is polished and effective."
+            "Create a structured content brief for any advertising material. "
+            "Defines platform specs, required elements, messaging angles, "
+            "tone guidance, and what to avoid — so the final copy is on-brand and effective."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "content_type": {
+                "content_format": {
                     "type": "string",
                     "enum": [
                         "social_media_post",
+                        "paid_ad_copy",
                         "email_campaign",
                         "blog_article",
-                        "google_ad_copy",
-                        "press_release",
-                        "service_brochure",
-                        "website_copy",
                         "video_script",
-                        "case_study",
-                        "testimonial_request",
+                        "website_copy",
+                        "product_description",
+                        "press_release",
+                        "sms_campaign",
+                        "podcast_ad_script",
                     ],
-                    "description": "Type of advertising content to brief",
+                    "description": "Type of advertising content",
                 },
                 "platform": {
                     "type": "string",
-                    "description": (
-                        "Target platform (e.g., 'LinkedIn', 'Facebook', 'Twitter/X', "
-                        "'Email Newsletter', 'Website', 'Google Ads')"
-                    ),
+                    "description": "Target platform (e.g., 'Instagram', 'LinkedIn', 'Google Ads', 'Email', 'TikTok', 'Facebook', 'Twitter/X', 'YouTube')",
                 },
-                "key_message": {
+                "core_message": {
                     "type": "string",
-                    "description": "Core message or value proposition to communicate",
+                    "description": "The single most important thing this content must communicate",
                 },
-                "target_audience": {
+                "target_persona": {
                     "type": "string",
-                    "description": "Specific audience segment to target",
+                    "description": "Who this specific piece is aimed at",
+                },
+                "desired_action": {
+                    "type": "string",
+                    "description": "What you want the audience to do after seeing this (e.g., 'click Buy Now', 'sign up for a free trial', 'book a call')",
                 },
                 "tone": {
                     "type": "string",
-                    "enum": ["professional", "authoritative", "friendly", "urgent", "educational"],
-                    "description": "Desired tone of the content",
+                    "enum": ["professional", "casual", "playful", "urgent", "inspirational", "educational", "luxury", "bold"],
+                    "description": "Brand tone for this piece",
                 },
             },
-            "required": ["content_type", "platform", "key_message"],
+            "required": ["content_format", "platform", "core_message", "desired_action"],
         },
     },
     {
-        "name": "generate_ab_test_plan",
+        "name": "plan_ab_test",
         "description": (
-            "Create an A/B testing plan for advertising content including testing "
-            "methodology, metrics to track, and guidance on which element to vary "
-            "across multiple content variations."
+            "Design an A/B testing plan for advertising content — "
+            "specifying what to vary, how long to run each version, "
+            "which metrics to track, and how to declare a winner."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "content_to_test": {
                     "type": "string",
-                    "description": "The original content or concept to create variations of",
+                    "description": "The original content, concept, or ad to test",
                 },
-                "test_element": {
+                "variable_to_test": {
                     "type": "string",
-                    "enum": [
-                        "headline",
-                        "call_to_action",
-                        "value_proposition",
-                        "tone",
-                        "format",
-                    ],
-                    "description": "Which element to vary across the versions",
+                    "enum": ["headline", "call_to_action", "image_or_creative", "offer", "tone", "audience_segment", "send_time"],
+                    "description": "The single variable to change across versions",
                 },
-                "num_variations": {
+                "num_versions": {
                     "type": "integer",
-                    "description": "Number of variations to create (2–4)",
+                    "description": "Total number of versions including the control (2–5)",
                     "minimum": 2,
-                    "maximum": 4,
+                    "maximum": 5,
+                },
+                "success_metric": {
+                    "type": "string",
+                    "description": "How to measure the winner (e.g., 'click-through rate', 'conversion rate', 'open rate', 'cost per lead')",
                 },
             },
-            "required": ["content_to_test", "test_element", "num_variations"],
+            "required": ["content_to_test", "variable_to_test", "num_versions"],
         },
     },
 ]
 
 # ---------------------------------------------------------------------------
-# System prompt
+# System prompt — generic, works for any business
 # ---------------------------------------------------------------------------
-SYSTEM_PROMPT = """You are an expert marketing and advertising agent specializing in \
-court reporting and legal transcription businesses. Your deep expertise covers:
+SYSTEM_PROMPT = """You are an expert advertising and marketing strategist who works with \
+businesses of all types — from solo entrepreneurs to established companies, across every \
+industry.
 
-• B2B marketing to law firms, attorneys, and corporate legal departments
-• Legal industry standards, tone, and professional communication
-• Multi-channel digital marketing: LinkedIn, email, content marketing, Google Ads
-• Brand positioning for professional services firms
-• Ready-to-publish copy that legal professionals trust and respond to
+Your capabilities:
+• Audience research and buyer persona development
+• Multi-channel campaign strategy (paid, organic, email, content, social)
+• Copywriting: ads, emails, social posts, landing pages, video scripts, blog articles
+• Brand voice development and messaging frameworks
+• A/B testing design and performance analysis
+• Budget-conscious strategies that maximise ROI
 
-Your job is to help court reporting businesses attract more clients, build their \
-brand, and grow sustainably through effective, dignified advertising.
-
-**Workflow rules:**
-1. ALWAYS start by calling analyze_audience so you understand who you are addressing \
-   before writing a single word of content.
-2. For any campaign request, call create_campaign_strategy to build a structured plan first.
-3. Before producing polished copy, call generate_content_brief to lock down the specs.
-4. When A/B testing is needed, call generate_ab_test_plan for testing methodology.
-5. After using the tools, provide COMPLETE, ready-to-use deliverables — not outlines. \
-   Give the client something they can publish today.
-6. Use a professional tone fitting the legal industry at all times.
-7. Be specific, actionable, and practical — avoid generic marketing clichés."""
+How you work:
+1. ALWAYS call analyze_audience first so you understand exactly who you are writing for.
+2. For campaign requests, call build_campaign_strategy before producing any content.
+3. Before writing polished copy, call create_content_brief to lock in the specs.
+4. When testing is needed, use plan_ab_test to design a rigorous testing methodology.
+5. After using the tools, produce COMPLETE, ready-to-use deliverables — not outlines or \
+   bullet-point skeletons. Give the client something they can act on immediately.
+6. Match your tone to the business and their audience — never default to generic corporate speak.
+7. Be specific, creative, and practical. Avoid marketing clichés."""
 
 
 # ---------------------------------------------------------------------------
@@ -213,319 +202,286 @@ brand, and grow sustainably through effective, dignified advertising.
 # ---------------------------------------------------------------------------
 
 def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
-    """Execute an advertising-agent tool and return a JSON string result."""
+    """Execute a tool call and return a JSON string result."""
 
-    # ------------------------------------------------------------------
+    # ── analyze_audience ─────────────────────────────────────────────────────
     if tool_name == "analyze_audience":
-        service_type = tool_input.get("service_type", "court reporting services")
-        geographic_focus = tool_input.get("geographic_focus", "local market")
-        target_firm_size = tool_input.get("target_firm_size", "all")
+        business_type = tool_input.get("business_type", "business")
+        product = tool_input.get("product_or_service", "product/service")
+        current_audience = tool_input.get("current_audience", "")
+        goal = tool_input.get("goal", "attract new customers")
 
         result = {
-            "service": service_type,
-            "geographic_focus": geographic_focus,
-            "target_firm_size": target_firm_size,
+            "business": business_type,
+            "product_or_service": product,
+            "stated_goal": goal,
+            "existing_audience_note": current_audience or "Not provided — personas built from scratch",
             "primary_personas": [
                 {
-                    "persona": "Litigation Attorney",
-                    "role": "Primary buyer and end-user",
-                    "pain_points": [
-                        "Transcript accuracy — errors can cost cases",
-                        "Tight transcript turnaround windows",
-                        "Reliable scheduling around court dates",
-                        "Real-time feed for fast-paced depositions",
+                    "name": "Core Buyer",
+                    "description": f"The most likely paying customer for {product}",
+                    "typical_triggers": [
+                        "Actively searching for a solution to a specific problem",
+                        "Saw a recommendation from someone they trust",
+                        "Encountered the brand multiple times and became curious",
                     ],
-                    "motivations": ["Win cases", "Meet deadlines", "Reduce admin friction"],
-                    "best_channels": [
-                        "LinkedIn (professional posts & direct messages)",
-                        "Bar association newsletters",
-                        "Referrals from colleagues",
-                        "Email outreach with case-study proof points",
+                    "key_objections": [
+                        "Is this worth the price?",
+                        "Can I trust this brand?",
+                        "Does it actually work for someone like me?",
                     ],
+                    "best_channels": ["Search (Google/Bing)", "Word of mouth / referrals", "Social proof & reviews"],
                 },
                 {
-                    "persona": "Law Firm Office Manager",
-                    "role": "Vendor selection & scheduling decision-maker",
-                    "pain_points": [
-                        "Managing multiple vendor relationships",
-                        "Keeping costs under control",
-                        "Avoiding last-minute scheduling crises",
+                    "name": "Aspirational Buyer",
+                    "description": "Aware of the problem but not yet actively searching",
+                    "typical_triggers": [
+                        "Inspired by content that shows the transformation",
+                        "Influenced by peers or influencers",
+                        "Responds to a compelling offer or limited-time deal",
                     ],
-                    "motivations": ["Efficiency", "Cost predictability", "Smooth operations"],
-                    "best_channels": [
-                        "Email marketing (practical, ROI-focused)",
-                        "Local business networking",
-                        "LinkedIn",
+                    "key_objections": [
+                        "I'm not sure I really need this right now",
+                        "I haven't heard of this brand before",
                     ],
+                    "best_channels": ["Instagram / TikTok", "YouTube", "Influencer partnerships", "Retargeting ads"],
                 },
                 {
-                    "persona": "Corporate / In-House Counsel",
-                    "role": "Compliance-conscious buyer",
-                    "pain_points": [
-                        "Confidentiality and chain-of-custody assurance",
-                        "Seamless technology integration",
-                        "Multi-jurisdiction and remote capability",
+                    "name": "Repeat / Loyalty Buyer",
+                    "description": "Past customer with potential for repeat purchase or upsell",
+                    "typical_triggers": [
+                        "Positive first experience",
+                        "Personalised follow-up offer",
+                        "Loyalty reward or exclusive access",
                     ],
-                    "motivations": ["Compliance", "Operational efficiency", "Cost control"],
-                    "best_channels": [
-                        "LinkedIn",
-                        "Legal industry publications",
-                        "Direct mail / targeted email",
+                    "key_objections": [
+                        "I'm already happy with what I have",
+                        "Why should I buy again / upgrade?",
                     ],
+                    "best_channels": ["Email marketing", "SMS", "Loyalty programme", "Exclusive offers"],
                 },
             ],
-            "key_value_propositions": [
-                "Certified accuracy — every transcript guaranteed",
-                "24–48-hour standard turnaround; rush options available",
-                "Real-time reporting technology for complex depositions",
-                "Fully remote and in-person capability",
-                "Strict confidentiality and secure file delivery",
+            "universal_messaging_pillars": [
+                "Lead with the transformation — what life looks like AFTER buying",
+                "Use social proof heavily (reviews, numbers, testimonials)",
+                "Reduce perceived risk (guarantee, free trial, easy returns)",
+                "Create urgency without being manipulative",
+                "Speak to one person, not a crowd",
             ],
-            "recommended_channels": {
-                "primary": [
-                    "LinkedIn (organic content + direct outreach)",
-                    "Direct email to law firm contacts",
-                    "Bar association member directories & publications",
-                ],
-                "secondary": [
-                    "Google My Business (local search)",
-                    "Google Search Ads (local keywords)",
-                    "Legal industry directories",
-                    "Client referral programme",
-                ],
-                "supplementary": [
-                    "Facebook (community credibility)",
-                    "Legal networking events / CLE sponsorships",
-                    "Website SEO / blog content",
-                ],
+            "channel_priority_framework": {
+                "highest_intent": ["Google Search Ads", "SEO", "Reviews / Directories"],
+                "community_building": ["Instagram", "Facebook", "LinkedIn", "TikTok"],
+                "owned_channels": ["Email list", "SMS", "Blog / Content hub"],
+                "amplification": ["Influencers", "Paid social", "Podcast sponsorships"],
             },
-            "messaging_themes": [
-                "Precision and accuracy in every word",
-                "Technology-forward, yet personal service",
-                "Your trusted legal documentation partner",
-                "We save attorney time and prevent costly errors",
-                "Seamless integration with your legal workflow",
-            ],
         }
         return json.dumps(result, indent=2)
 
-    # ------------------------------------------------------------------
-    elif tool_name == "create_campaign_strategy":
-        goal = tool_input.get("goal", "attract new clients")
-        duration_weeks = tool_input.get("duration_weeks", 8)
-        budget = tool_input.get("budget", "flexible")
-        channels = tool_input.get("channels", ["LinkedIn", "Email", "Google"])
+    # ── build_campaign_strategy ──────────────────────────────────────────────
+    elif tool_name == "build_campaign_strategy":
+        business_type = tool_input.get("business_type", "business")
+        objective = tool_input.get("campaign_objective", "grow the business")
+        weeks = tool_input.get("duration_weeks", 8)
+        budget = tool_input.get("monthly_budget", "flexible")
+        channels = tool_input.get("channels", ["Social Media", "Email", "Paid Ads"])
 
-        p1_end = max(2, duration_weeks // 4)
-        p2_end = max(p1_end + 1, duration_weeks * 3 // 4)
+        p1 = max(2, weeks // 4)
+        p2 = max(p1 + 2, (weeks * 3) // 4)
 
         result = {
             "campaign_overview": {
-                "goal": goal,
-                "duration": f"{duration_weeks} weeks",
-                "budget_guidance": budget,
-                "primary_channels": channels,
+                "business": business_type,
+                "objective": objective,
+                "duration": f"{weeks} weeks",
+                "monthly_budget": budget,
+                "channels": channels,
             },
             "phases": [
                 {
-                    "name": f"Phase 1 — Foundation (Weeks 1–{p1_end})",
-                    "focus": "Brand audit, asset creation, and list building",
+                    "phase": f"Phase 1 — Build (Weeks 1–{p1})",
+                    "focus": "Set the foundation before spending money on reach",
                     "activities": [
-                        "Audit and optimise Google My Business profile",
-                        "Update/create professional LinkedIn company page",
-                        "Develop core brand messaging and visual assets",
-                        "Build a prospect email list (bar association directories, LinkedIn)",
-                        "Create a content library of 10–15 reusable pieces",
+                        "Audit and optimise all existing channels and profiles",
+                        "Define brand voice, key messages, and visual style",
+                        "Create a core content library (10+ reusable assets)",
+                        "Set up tracking: pixels, UTMs, conversion goals",
+                        "Identify and brief 2–3 micro-influencers or partners if relevant",
                     ],
-                    "budget_allocation": "20%",
+                    "budget_split": "15%",
                 },
                 {
-                    "name": f"Phase 2 — Active Outreach (Weeks {p1_end + 1}–{p2_end})",
-                    "focus": "Content publishing, paid ads, and direct outreach",
+                    "phase": f"Phase 2 — Launch & Reach (Weeks {p1 + 1}–{p2})",
+                    "focus": "Push content out, run ads, and collect real data",
                     "activities": [
-                        "Publish 3–4 social media posts per week",
-                        "Launch 2 email newsletter campaigns",
-                        "Run targeted LinkedIn / Google local ads",
-                        "Conduct personalised outreach to 50+ prospects",
-                        "Attend 1–2 bar association or legal networking events",
+                        "Publish content consistently across chosen channels",
+                        "Launch paid campaigns with small test budgets first",
+                        "Run email welcome sequence to new subscribers",
+                        "Engage actively with comments and DMs",
+                        "Capture leads and nurture them toward purchase",
                     ],
-                    "budget_allocation": "60%",
+                    "budget_split": "65%",
                 },
                 {
-                    "name": f"Phase 3 — Optimise & Scale (Weeks {p2_end + 1}–{duration_weeks})",
-                    "focus": "Performance analysis, testimonials, and retention",
+                    "phase": f"Phase 3 — Optimise & Scale (Weeks {p2 + 1}–{weeks})",
+                    "focus": "Cut what doesn't work, scale what does",
                     "activities": [
-                        "Analyse campaign metrics; double down on top performers",
-                        "Collect and publish 3–5 client testimonials / case studies",
-                        "Launch a referral incentive programme",
-                        "Plan the next campaign cycle",
+                        "Pause underperforming ads; increase budget on winners",
+                        "Collect customer testimonials and social proof",
+                        "Launch retargeting campaigns to warm audiences",
+                        "Plan the next campaign cycle using data from this one",
                     ],
-                    "budget_allocation": "20%",
+                    "budget_split": "20%",
                 },
             ],
-            "content_calendar_cadence": {
-                "LinkedIn": "3–4 posts per week (tips, case studies, behind-the-scenes)",
-                "Email": "2 newsletters per month",
-                "Blog / Website": "2 SEO-focused articles per month",
-                "Google Ads": "Continuous, with weekly bid and copy optimisation",
+            "content_cadence": {
+                "Social Media (organic)": "4–5 posts per week",
+                "Email": "1–2 campaigns per week",
+                "Blog / SEO content": "1–2 articles per month",
+                "Paid ads": "Always-on, optimised weekly",
+                "Video (if applicable)": "1–2 pieces per month",
             },
             "kpis": [
-                "New client enquiries per month",
-                "Website traffic increase (%)",
-                "Email open rate (target ≥25 %)",
-                "LinkedIn engagement rate (target ≥3 %)",
-                "Lead-to-client conversion rate",
-                "Cost per qualified lead",
-                "Revenue generated from new clients",
+                "Cost per lead (CPL)",
+                "Cost per acquisition (CPA)",
+                "Return on ad spend (ROAS)",
+                "Email open rate (target: 25%+) and click rate (target: 3%+)",
+                "Social engagement rate (target: 3–5%)",
+                "Website conversion rate",
+                "Revenue directly attributed to campaign",
             ],
-            "quick_wins_this_week": [
-                "Optimise Google My Business profile with photos and updated hours",
-                "Ask 5 satisfied clients for a written testimonial",
-                "Connect with 25 attorneys on LinkedIn with a personalised note",
-                "Publish one highly-shareable educational post about what court reporters do",
+            "quick_wins_start_today": [
+                "Post one piece of customer-proof content (review, result, before/after)",
+                "Set up or optimise your Google Business Profile",
+                "Email your existing contact list with a genuine update and offer",
+                "Identify your single best-performing past post and boost it with $20",
             ],
         }
         return json.dumps(result, indent=2)
 
-    # ------------------------------------------------------------------
-    elif tool_name == "generate_content_brief":
-        content_type = tool_input.get("content_type", "social_media_post")
-        platform = tool_input.get("platform", "LinkedIn")
-        key_message = tool_input.get("key_message", "")
-        target_audience = tool_input.get("target_audience", "litigation attorneys")
-        tone = tool_input.get("tone", "professional")
+    # ── create_content_brief ─────────────────────────────────────────────────
+    elif tool_name == "create_content_brief":
+        fmt = tool_input.get("content_format", "social_media_post")
+        platform = tool_input.get("platform", "Instagram")
+        core_message = tool_input.get("core_message", "")
+        persona = tool_input.get("target_persona", "ideal customer")
+        action = tool_input.get("desired_action", "visit our website")
+        tone = tool_input.get("tone", "casual")
 
-        platform_specs: Dict[str, Any] = {
-            "LinkedIn": {
-                "max_chars": 3000,
-                "ideal_chars": "1 200–1 500",
-                "format": "Text + optional image or document carousel",
-                "hashtags": "3–5 relevant hashtags",
-                "best_time": "Tue–Thu, 7–9 am or 5–6 pm",
-            },
-            "Twitter/X": {
-                "max_chars": 280,
-                "ideal_chars": "240 (leaves room for replies)",
-                "format": "Concise text; or thread for longer content",
-                "hashtags": "1–2 max",
-            },
-            "Facebook": {
-                "ideal_chars": "40–80 (short posts perform better)",
-                "format": "Text with image or short video",
-                "hashtags": "0–2",
-            },
-            "Email Newsletter": {
-                "subject_line_chars": "≤50 (preview up to 90)",
-                "body": "Scannable: short paragraphs, bullet points, one clear CTA button",
-                "ideal_length": "200–400 words",
-                "send_day": "Tuesday or Thursday, 10 am local time",
-            },
-            "Google Ads": {
-                "headlines": "Up to 15 (30 chars each; 3 shown per ad)",
-                "descriptions": "Up to 4 (90 chars each; 2 shown per ad)",
-                "display_url": "Two optional path fields, 15 chars each",
-                "tips": "Include the keyword and a strong CTA in at least one headline",
-            },
+        specs: Dict[str, Any] = {
+            "Instagram": {"caption_chars": "≤2 200 (first 125 chars are critical)", "hashtags": "5–10", "visual": "High-quality image or Reel", "best_time": "Tue–Fri, 11am–1pm or 7–9pm"},
+            "TikTok": {"video_length": "15–60 sec sweet spot", "hook": "First 2 seconds must stop the scroll", "caption": "≤150 chars", "hashtags": "3–5 trending + niche mix"},
+            "Facebook": {"post_chars": "40–80 chars outperform longer posts", "image": "1 200×630 px", "hashtags": "1–2 max", "best_time": "Wed, 11am–1pm"},
+            "LinkedIn": {"post_chars": "1 300 chars ideal", "hook": "First line must earn the 'see more' click", "hashtags": "3–5 professional", "best_time": "Tue–Thu, 8–10am"},
+            "Twitter/X": {"char_limit": "280 (aim for ≤240)", "threads": "Use for long-form; hook tweet is critical", "hashtags": "1–2 max"},
+            "Google Ads": {"headlines": "Up to 15 @ 30 chars each (3 shown)", "descriptions": "Up to 4 @ 90 chars each (2 shown)", "tip": "Put keyword + CTA in at least one headline"},
+            "Email": {"subject": "≤50 chars; avoid spam trigger words", "preview_text": "90 chars", "body": "One idea, one CTA; bullet points for scannability", "best_day": "Tue or Thu, 10am"},
+            "YouTube": {"title": "≤60 chars, keyword-first", "description": "First 2–3 lines show without expanding", "hook": "First 30 sec must justify watching"},
         }
 
-        specs = platform_specs.get(platform, {"note": "Follow current platform best practices"})
+        platform_spec = specs.get(platform, {"note": "Follow current platform best practices for format and character limits"})
 
         result = {
-            "content_brief": {
-                "type": content_type,
+            "brief": {
+                "format": fmt,
                 "platform": platform,
-                "target_audience": target_audience,
-                "core_message": key_message,
+                "target_persona": persona,
+                "core_message": core_message,
+                "desired_action": action,
                 "tone": tone,
             },
-            "platform_specifications": specs,
-            "required_elements": [
-                "Attention-grabbing hook or headline within the first line",
-                "Core value proposition tied to the key message",
-                "One clear call-to-action (e.g., 'Schedule a free consultation', 'Reply to this email')",
-                "Credibility signal (years of experience, certification, client count)",
+            "platform_specs": platform_spec,
+            "must_have_elements": [
+                "Pattern-interrupt hook in the very first line / frame",
+                f"Core message: '{core_message}'",
+                f"One clear CTA: '{action}'",
+                "Social proof element (number, review snippet, client name)",
+                "Brand voice consistency with the '{tone}' tone",
             ],
-            "five_content_angles": [
-                f"Problem/Solution — How {key_message} eliminates [attorney pain point]",
-                f"Social Proof — A real client story that proves {key_message}",
-                f"Educational — What {target_audience} should know about {key_message}",
-                f"Behind-the-Scenes — How your team delivers {key_message}",
-                f"Data-led — A surprising statistic that underscores the need for {key_message}",
+            "proven_content_angles": [
+                f"Before/After — show the transformation your product/service creates",
+                f"Problem/Agitate/Solve — name the pain, make it vivid, offer the fix",
+                f"Social proof story — a real customer result tied to '{core_message}'",
+                f"Curiosity gap — tease insight that {persona} doesn't want to miss",
+                f"Contrast — what life looks like without vs. with your solution",
             ],
-            "power_keywords": [
-                "certified court reporter",
-                "accurate legal transcripts",
-                "real-time deposition reporting",
-                "fast turnaround",
-                "confidential and secure",
-            ],
+            "tone_guidance": {
+                "professional": "Authoritative sentences, data-backed claims, no slang",
+                "casual": "Conversational, first-person, contractions OK, feel like a friend",
+                "playful": "Puns/wordplay welcome, emoji OK, light and energetic",
+                "urgent": "Time-bound language, scarcity signals, action verbs",
+                "inspirational": "Aspirational vision, 'you can do this' energy, emotional",
+                "educational": "Teach something valuable, step-by-step, 'did you know' format",
+                "luxury": "Understated confidence, sensory language, exclusivity cues",
+                "bold": "Short punchy sentences. Strong claims. No hedging.",
+            }.get(tone, "Match the brand's natural voice"),
             "avoid": [
-                "Vague promises without specifics ('best in class', 'unmatched quality')",
-                "Multiple competing calls-to-action in one piece",
-                "Legal jargon your prospects may not recognise",
-                "Overly salesy language — legal professionals value trust over hype",
+                "Multiple calls-to-action competing with each other",
+                "Opening with 'We' — start with 'You' or a hook",
+                "Vague claims without specifics ('amazing quality', 'best service')",
+                "Jargon your audience wouldn't use themselves",
             ],
         }
         return json.dumps(result, indent=2)
 
-    # ------------------------------------------------------------------
-    elif tool_name == "generate_ab_test_plan":
-        content_to_test = tool_input.get("content_to_test", "")
-        test_element = tool_input.get("test_element", "headline")
-        num_variations = tool_input.get("num_variations", 3)
+    # ── plan_ab_test ─────────────────────────────────────────────────────────
+    elif tool_name == "plan_ab_test":
+        content = tool_input.get("content_to_test", "")
+        variable = tool_input.get("variable_to_test", "headline")
+        versions = tool_input.get("num_versions", 2)
+        metric = tool_input.get("success_metric", "click-through rate")
 
-        element_guidance = {
-            "headline": "Test different opening hooks and value statements",
-            "call_to_action": "Test CTAs: 'Schedule a Consultation' vs 'Get a Free Quote' vs 'Learn More'",
-            "value_proposition": "Test different core benefits: speed vs accuracy vs technology",
-            "tone": "Test professional authority vs friendly approachability vs urgency",
-            "format": "Test list format vs narrative paragraph vs stat-led",
+        guidance = {
+            "headline": "Write versions with different emotional angles (curiosity vs. urgency vs. benefit-led)",
+            "call_to_action": "Test button/link text: action verb + outcome (e.g., 'Get My Free Quote' vs. 'Start Saving Today' vs. 'Book a Call')",
+            "image_or_creative": "Test lifestyle image vs. product-only vs. person-facing-camera vs. text-overlay graphic",
+            "offer": "Test price framing (monthly vs. annual), bonus inclusions, and free trial vs. money-back guarantee",
+            "tone": "Test formal/professional vs. casual/conversational vs. urgent/scarcity-based",
+            "audience_segment": "Run the same ad to 2–3 different audience segments to find the most responsive",
+            "send_time": "Test different days/times for email or paid post boosts",
         }
 
         result = {
-            "test_overview": {
-                "content_excerpt": (
-                    content_to_test[:300] + "…" if len(content_to_test) > 300 else content_to_test
-                ),
-                "element_under_test": test_element,
-                "num_variations": num_variations,
-                "testing_guidance": element_guidance.get(test_element, "Test distinct approaches"),
+            "test_design": {
+                "content_excerpt": content[:300] + ("…" if len(content) > 300 else ""),
+                "variable": variable,
+                "num_versions": versions,
+                "primary_metric": metric,
+                "testing_guidance": guidance.get(variable, "Isolate one clear difference between versions"),
             },
-            "testing_methodology": {
-                "min_run_duration": "2 weeks per variation",
-                "min_impressions_per_variation": 500,
-                "winner_criteria": "Higher engagement rate OR higher click-through/conversion rate",
-                "statistical_confidence_target": "80 %+",
-                "one_variable_rule": "Change only the tested element; keep everything else identical",
+            "version_labels": [
+                "Control (A) — your current / baseline version",
+                *[f"Variant {chr(66 + i)} — changed version {i + 1}" for i in range(versions - 1)],
+            ],
+            "methodology": {
+                "golden_rule": "Change ONE variable only — everything else stays identical",
+                "min_sample_per_version": "500 impressions / 100 opens before drawing conclusions",
+                "min_duration": "7 days minimum; 14 days preferred to smooth day-of-week effects",
+                "confidence_target": "95% statistical significance before declaring a winner",
+                "tool_recommendations": ["Google Optimize (free)", "Klaviyo (email)", "Meta Ads split test tool", "Optimizely"],
             },
             "metrics_to_track": [
-                "Click-through rate (CTR)",
-                "Engagement rate (reactions, shares, comments)",
-                "Enquiry / form-submission conversion rate",
-                "Cost per click (for paid placements)",
-                "Bounce rate (for landing pages)",
+                metric,
+                "Engagement rate",
+                "Conversion rate (not just clicks)",
+                "Cost per result (if paid)",
+                "Revenue or pipeline value if trackable",
             ],
-            "implementation_checklist": [
-                "Label each variation clearly (Control, Variant A, Variant B, …)",
-                "Run Control vs one Variant at a time",
-                "Record all results before moving to the next test",
-                "Build a 'what worked' log for future campaigns",
+            "after_the_test": [
+                "Implement the winner immediately",
+                "Document the result in your 'what works' log",
+                "Use the losing variant's insight to form the next hypothesis",
+                "Run a new test on the next variable in the funnel",
             ],
         }
         return json.dumps(result, indent=2)
 
-    # ------------------------------------------------------------------
+    # ── unknown tool ─────────────────────────────────────────────────────────
     else:
-        return json.dumps(
-            {
-                "error": f"Unknown tool: {tool_name}",
-                "available_tools": [t["name"] for t in ADVERTISING_TOOLS],
-            }
-        )
+        return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
 
 # ---------------------------------------------------------------------------
-# Agent runner
+# Agent runner  (streaming generator)
 # ---------------------------------------------------------------------------
 
 def run_advertising_agent(
@@ -534,34 +490,27 @@ def run_advertising_agent(
     business_context: Optional[Dict[str, str]] = None,
 ) -> Generator[str, None, None]:
     """
-    Run the advertising agent with an agentic tool-use loop.
+    Run the advertising agent in an agentic tool-use loop.
 
-    Yields:
-        str — status messages (tool calls) and the final response text in markdown.
-
-    Args:
-        api_key: Anthropic API key.
-        user_request: The user's advertising or marketing request.
-        business_context: Optional dict with business profile information.
+    Yields text chunks (status updates + final markdown response).
     """
     client = anthropic.Anthropic(api_key=api_key)
 
-    # Build the initial user message, optionally prepended with business context
     user_content = user_request
     if business_context:
-        context_lines = "\n".join(
-            f"- **{k}**: {v}" for k, v in business_context.items() if v and v.strip()
+        lines = "\n".join(
+            f"- **{k}**: {v}" for k, v in business_context.items() if v and str(v).strip()
         )
-        if context_lines:
+        if lines:
             user_content = (
-                f"**My Court Reporting Business Profile:**\n{context_lines}\n\n"
+                f"**About My Business:**\n{lines}\n\n"
                 f"**My Request:**\n{user_request}"
             )
 
     messages = [{"role": "user", "content": user_content}]
-
     max_iterations = 12
-    for iteration in range(max_iterations):
+
+    for _ in range(max_iterations):
         response = client.messages.create(
             model=ADVERTISING_MODEL,
             max_tokens=8192,
@@ -571,41 +520,34 @@ def run_advertising_agent(
             messages=messages,
         )
 
-        # ── Final answer ────────────────────────────────────────────────
         if response.stop_reason == "end_turn":
             for block in response.content:
                 if block.type == "text":
                     yield block.text
             return
 
-        # ── Tool use ─────────────────────────────────────────────────────
         if response.stop_reason == "tool_use":
             tool_blocks = [b for b in response.content if b.type == "tool_use"]
-            names = ", ".join(b.name for b in tool_blocks)
-            yield f"\n\n---\n⚙️ *Running: {names}…*\n\n---\n\n"
+            names = ", ".join(b.name.replace("_", " ") for b in tool_blocks)
+            yield f"\n\n---\n⚙️ *Researching: {names}…*\n\n---\n\n"
 
-            # Append assistant turn (includes tool_use blocks)
             messages.append({"role": "assistant", "content": response.content})
 
-            # Execute every tool call and collect results
-            tool_results = []
-            for tb in tool_blocks:
-                result_str = execute_tool(tb.name, tb.input)
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tb.id,
-                        "content": result_str,
-                    }
-                )
-
+            tool_results = [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tb.id,
+                    "content": execute_tool(tb.name, tb.input),
+                }
+                for tb in tool_blocks
+            ]
             messages.append({"role": "user", "content": tool_results})
             continue
 
-        # ── Unexpected stop reason ───────────────────────────────────────
+        # Unexpected stop reason
         for block in response.content:
             if block.type == "text":
                 yield block.text
         return
 
-    yield "\n\n*[Agent reached the maximum number of iterations.]*"
+    yield "\n\n*[Reached maximum iterations — see output above.]*"
