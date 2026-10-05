@@ -2,3 +2,4 @@ streamlit
 pandas
 openpyxl
 xlsxwriter
+anthropic>=0.40.0
